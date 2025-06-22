@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FilmBöngésző – dmd</title>
+  <style>
+    body { margin: 0; background: black; color: white; font-family: Arial, sans-serif; }
+    header { background: #1c1c1c; padding: 20px; text-align: center; position: relative; }
+    h1 { margin: 0; font-size: 28px; color: cyan; }
+    #clock { position: absolute; top: 10px; right: 20px; font-size: 16px; color: cyan; }
+    #movies { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 15px; padding: 15px; }
+    .movie { background: #222; border: 6px solid deepskyblue; border-radius: 12px; overflow: hidden; cursor: pointer; transition: transform 0.3s ease, box-shadow 0.3s ease; }
+    .movie:hover { transform: scale(1.05); box-shadow: 0 0 32px deepskyblue; }
+    .movie img { width: 100%; height: 240px; object-fit: cover; border-bottom: 4px solid black; }
+    .movie-title { padding: 10px; text-align: center; font-size: 18px; color: cyan; }
+    #preloader { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 9999; }
+    .loader { border: 8px solid #333; border-top: 8px solid cyan; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #playerModal { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.95); display:none; flex-direction: column; align-items: center; justify-content: center; z-index:10000; }
+    #playerIframe { width: 90%; height: 80%; border: 6px solid deepskyblue; }
+    #closeBtn { position: absolute; top: 10px; right: 20px; font-size: 28px; color: red; cursor: pointer; }
+    #movieDesc { margin-top: 12px; text-align: center; color: #ccc; font-size: 16px; max-width: 90%; }
+    #loadMoreBtn { text-align: center; padding: 20px; }
+    #loadMoreBtn button { padding: 12px 24px; font-size: 16px; background: cyan; color: black; border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 0 10px cyan; transition: background 0.3s, box-shadow 0.3s; }
+    #loadMoreBtn button:hover { background: #00ffff; box-shadow: 0 0 20px cyan; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>D-MEDIA FILMEK SANDU</h1>
+    <div id="clock">00:00:00</div>
+  </header>
+
+  <div id="movies"></div>
+  <div id="loadMoreBtn"><button onclick="loadMoreMovies()">Több film betöltése</button></div>
+  <div id="preloader"><div class="loader"></div></div>
+
+  <div id="playerModal">
+    <div id="closeBtn" onclick="closeModal()">×</div>
+    <iframe id="playerIframe" allowfullscreen></iframe>
+    <div id="movieDesc"></div>
+  </div>
+
+  <script>
+    const proxyRaw = "https://api.allorigins.win/raw?url=";
+    const proxy = "https://api.allorigins.win/get?url=";
+    let currentPage = 1;
+
+    // A támogatott iframe-források listája
+    const supportedHosts = [
+      "ok.ru", "vidoza", "veev", "filemoon", "dood", "mixdrop",
+      "streamwish", "videa.hu", "vk.com", "streamtape.com", "streamlare.com",
+      "sbembed.com", "voe.sx", "filemoon.sx", "vidhide.com", "filelions.com",
+      "zippyshare.com", "youtube.com", "drive.google.com"
+    ];
+
+    function updateClock() {
+      const now = new Date();
+      document.getElementById("clock").textContent = now.toLocaleTimeString("hu-HU", { hour12: false });
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    function loadMoreMovies() {
+      currentPage++;
+      fetchDmdMediaPage(currentPage);
+    }
+
+    function fetchDmdMediaPage(page = 1) {
+      const dmdUrl = `https://dmda.media/filmek/legnezettebb/oldal/${page}`;
+      document.getElementById("preloader").style.display = "flex";
+
+      fetch(proxy + encodeURIComponent(dmdUrl))
+        .then(res => res.ok ? res.json() : Promise.reject("Hiba a forrás elérésénél"))
+        .then(data => {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(data.contents, "text/html");
+          const items = doc.querySelectorAll(".sorozatok");
+          const container = document.getElementById("movies");
+
+          if (items.length === 0) {
+            document.getElementById("loadMoreBtn").innerHTML = "<p style='color:orange;'>Nincs több oldal.</p>";
+            document.getElementById("preloader").style.display = "none";
+            return;
+          }
+
+          items.forEach(item => {
+            const title = item.querySelector("h1")?.textContent.trim();
+            const link = item.querySelector("a")?.getAttribute("href");
+            const posterEl = item.querySelector("img");
+            let poster = posterEl?.getAttribute("data-src") || posterEl?.getAttribute("src") || "";
+            const fullPoster = poster.startsWith("/") ? "https://dmda.media" + poster : poster;
+
+            if (title && link) {
+              const div = document.createElement("div");
+              div.className = "movie";
+
+              const img = document.createElement("img");
+              img.src = fullPoster;
+              img.alt = title;
+
+              const titleDiv = document.createElement("div");
+              titleDiv.className = "movie-title";
+              titleDiv.textContent = title;
+
+              div.appendChild(img);
+              div.appendChild(titleDiv);
+              container.appendChild(div);
+
+              div.onclick = () => loadPlayer("https://dmda.media" + link, title);
+            }
+          });
+
+          document.getElementById("preloader").style.display = "none";
+        })
+        .catch(err => {
+          console.error("Hiba:", err);
+          document.getElementById("preloader").style.display = "none";
+        });
+    }
+
+    function loadPlayer(link, title) {
+      document.getElementById("preloader").style.display = "flex";
+
+      fetch(proxy + encodeURIComponent(link))
+        .then(res => res.ok ? res.json() : Promise.reject("Nem érhető el"))
+        .then(data => {
+          const doc = new DOMParser().parseFromString(data.contents, "text/html");
+          const iframes = doc.querySelectorAll("iframe");
+          const desc = doc.querySelector('meta[name="description"]')?.content || "Nincs leírás.";
+
+          let validSrc = null;
+          for (const iframe of iframes) {
+            let src = iframe.getAttribute("src") || "";
+            if (src.startsWith("//")) src = "https:" + src;
+
+            if (supportedHosts.some(host => src.includes(host))) {
+              validSrc = src;
+              break;
+            }
+          }
+
+          if (validSrc) {
+            if (!validSrc.includes("autoplay=1")) {
+              validSrc += (validSrc.includes("?") ? "&" : "?") + "autoplay=1";
+            }
+            document.getElementById("playerIframe").src = validSrc;
+            document.getElementById("movieDesc").innerText = title + " – " + desc;
+            document.getElementById("playerModal").style.display = "flex";
+          } else {
+            alert("Nincs elérhető támogatott lejátszó ehhez a filmhez.");
+          }
+
+          document.getElementById("preloader").style.display = "none";
+        })
+        .catch(err => {
+          alert("Hiba történt a lejátszó betöltésekor.");
+          console.error(err);
+          document.getElementById("preloader").style.display = "none";
+        });
+    }
+
+    function closeModal() {
+      document.getElementById("playerModal").style.display = "none";
+      document.getElementById("playerIframe").src = "";
+    }
+
+    // Első oldal betöltése induláskor
+    fetchDmdMediaPage(currentPage);
+  </script>
+</body>
+</html>
