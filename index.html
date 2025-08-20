@@ -146,7 +146,6 @@
 <body>
 <div class="sidebar">
   <a href="#" onclick="changeCategory('https://dmda.media/filmek?orderby=friss')" title="Új filmek"><i class="bi bi-film"></i></a>
-  <a href="#" onclick="changeCategory('https://dmda.media/sorozatok')" title="Sorozatok"><i class="bi bi-collection-play"></i></a>
   <a href="#" onclick="changeCategory('https://dmda.media/kategoria/7')" title="Akció"><i class="bi bi-lightning-fill"></i></a>
   <a href="#" onclick="changeCategory('https://dmda.media/kategoria/4')" title="Animációs"><i class="bi bi-palette-fill"></i></a>
   <a href="#" onclick="changeCategory('https://dmda.media/kategoria/20')" title="Családi"><i class="bi bi-house-heart"></i></a>
@@ -161,7 +160,6 @@
 <header>
   <select id="categorySelect" onchange="changeCategory(this.value)">
     <option value="https://dmda.media/filmek?orderby=friss">📽 FILMEK</option>
-    <option value="https://dmda.media/sorozatok">📺 SOROZATOK</option>
     <option value="https://dmda.media/kategoria/7">Akció</option>
     <option value="https://dmda.media/kategoria/4">Animációs</option>
     <option value="https://dmda.media/kategoria/20">Családi</option>
@@ -202,6 +200,7 @@
   const proxyRaw = "https://api.allorigins.win/raw?url=";
   const proxy = "https://api.allorigins.win/get?url=";
   let currentPage = 1;
+  let currentCategory = "https://dmda.media/filmek?orderby=friss";
 
   // támogatott hostok
   const supportedHosts = [
@@ -224,7 +223,6 @@
 
   function showPreloader(show){ document.getElementById("preloader").style.display = show ? "flex" : "none"; }
 
-  // segédek
   async function fetchViaProxy(url){
     const res = await fetch(proxy + encodeURIComponent(url));
     if(!res.ok) throw new Error("Proxy hiba");
@@ -261,13 +259,12 @@
     return null;
   }
 
-  // lista betöltése dmda.media-ról
-  function loadMoreMovies(){ currentPage++; fetchDmdMediaPage(currentPage); }
-  async function fetchDmdMediaPage(page=1){
-    const dmdUrl = `https://dmda.media/filmek/feltoltes/oldal/${page}`;
+  async function fetchDmdMediaPage(categoryUrl, page=1){
+    let url = categoryUrl;
+    if (!url.includes("?") && page > 1) url = `${categoryUrl}?page=${page}`;
     showPreloader(true);
     try{
-      const html = await fetchViaProxy(dmdUrl);
+      const html = await fetchViaProxy(url);
       const doc = parseHTML(html);
       const items = doc.querySelectorAll(".sorozatok");
       const container = document.getElementById("movies");
@@ -311,34 +308,29 @@
     }
   }
 
-  // ROBUSZTUS lejátszó
   async function loadPlayer(link, title){
     showPreloader(true);
     try{
       const html = await fetchViaProxy(link);
       const doc = parseHTML(html);
       const desc = doc.querySelector('meta[name="description"]')?.content || "Nincs leírás.";
-
-      // 1) Próbáljuk a .servername linkeket (ezek többnyire belső /video/ oldalak)
       const serverAnchors = Array.from(doc.querySelectorAll('a.servername[href], .servername[href]'));
       let candidateSrc = null;
 
       for (const a of serverAnchors){
         const href = a.getAttribute("href");
         if (!href) continue;
-        const serverUrl = normalizeUrl(href, link); // a /video/... is jó lesz itt
+        const serverUrl = normalizeUrl(href, link);
         try{
           const subHtml = await fetchViaProxy(serverUrl);
           const subDoc = parseHTML(subHtml);
           const src = extractIframeSrcFromDoc(subDoc, serverUrl);
           if (src){ candidateSrc = src; break; }
         } catch(e){
-          // megyünk tovább a következő serverre
           console.warn("Szerver nem jó:", serverUrl, e);
         }
       }
 
-      // 2) Ha nem jött össze, essünk vissza a fő oldal iframe-jeire
       if (!candidateSrc){
         candidateSrc = extractIframeSrcFromDoc(doc, link);
       }
@@ -346,17 +338,16 @@
       if (candidateSrc){
         const iframe = document.getElementById("playerIframe");
         iframe.src = candidateSrc;
-        // extra biztonság a lejátszáshoz
         iframe.setAttribute("allow", "autoplay; fullscreen; encrypted-media");
         iframe.setAttribute("referrerpolicy", "no-referrer");
 
         const caption = document.getElementById("movieDesc");
-        caption.textContent = `${title} — ${desc}`;
+        caption.textContent = `${title}`;
         const modal = document.getElementById("playerModal");
         modal.classList.add("show");
         modal.style.display = "flex";
       } else {
-        alert("Nincs elérhető támogatott lejátszó ehhez a filmhez.");
+        alert("Nincs elérhető lejátszó ehhez a filmhez.");
       }
     } catch(err){
       console.error(err);
@@ -372,24 +363,25 @@
     modal.style.display = "none";
     document.getElementById("playerIframe").src = "";
   }
-  /// ESC-re zárás
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closeModal();
-});
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
 
-// kategóriák – még „készül”, nem omlik össze
-function changeCategory(url) {
-  // alert("Kategóriák még készülnek. Most az 'Új feltöltések' listát mutatom (dmda.media).");
-  const container = document.getElementById("movies");
-  container.innerHTML = "";
-  currentPage = 1;
-  fetchDmdMediaPage(currentPage);
-  const sel = document.getElementById("categorySelect");
-  if (sel) sel.value = url;
-}
+  function changeCategory(url) {
+    const container = document.getElementById("movies");
+    container.innerHTML = "";
+    currentPage = 1;
+    currentCategory = url;
+    fetchDmdMediaPage(currentCategory, currentPage);
 
-// inicializálás
-fetchDmdMediaPage(1);
-</script>
+    const sel = document.getElementById("categorySelect");
+    if (sel) sel.value = url;
+  }
+
+  function loadMoreMovies(){ 
+    currentPage++; 
+    fetchDmdMediaPage(currentCategory, currentPage); 
+  }
+
+  fetchDmdMediaPage(currentCategory, currentPage);
+</script>>
 </body>
 </html>
